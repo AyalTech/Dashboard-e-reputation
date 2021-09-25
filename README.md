@@ -1,6 +1,6 @@
 # Dashboard e-reputation
 
-Le but de ce projet est d’élaborer une interface permettant la présentation des résultats d’analyse de e-réputation, à partir des tweets, pour les différents produits d’une même marque. Cette interface devra également fournir des recommandations pour l’entreprise afin que celle-ci mette sur le marché des produits vendeurs.
+Le but de ce projet est d’élaborer une interface permettant la présentation des résultats d’analyse de e-réputation, à partir des tweets, pour les différents produits d’une même marque. Cette interface fournit également des recommandations pour l’entreprise afin que celle-ci mette sur le marché des produits vendeurs.
 
 Voici les tâches effectuées pour créer l'interface:
 
