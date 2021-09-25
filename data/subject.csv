@@ -1,0 +1,32 @@
+CreatedByDsc,CreatedByName,ModifiedByDsc,ModifiedByName,OrganizationIdDsc,OrganizationIdName,ParentSubjectDsc,ParentSubjectName,Title,DeletionStateCode,Description,FeatureMask,CreatedOn,ModifiedOn
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de route,Route-650,0,"Vélo de type routier, modèle Route-650",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de tourisme,Tourisme-3000,0,"Vélo de type tourisme, modèle Tourisme-3000",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Informations générales - Société,Informations sur le contact,0,Informations générales de contact et de location.,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Service,Mises à niveau,0,Informations sur les mises à niveau.,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de tourisme,Tourisme-2000,0,"Vélo de type tourisme, modèle Tourisme-2000",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos,VTT,0,Ligne de produits des VTT,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,VTT,VTT-400-W,0,"Vélo de type VTT, modèle VTT-400-W",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos,Vélos de tourisme,0,Ligne de produits des vélos de tourisme,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Informations générales - Société,Marketing et ventes,0,"Tarification, listes de produits, catalogue.",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Service,Réparations et réglages,0,Informations sur les réparations et les réglages.,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de route,Route-550-W,0,"Vélo de type routier, modèle Route-550-W",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de route,Route-150,0,"Vélo de type routier, modèle Route-150",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,VTT,VTT-100,0,"Vélo de type VTT, modèle VTT-100",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos,Vélos de route,0,Ligne de produits des vélos de route,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de route,Route-450,0,"Vélo de type routier, modèle Route-450",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,VTT,VTT-200,0,"Vélo de type VTT, modèle VTT-200",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos,Composants,0,Informations sur les composants,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Informations générales - Société,Questions des revendeurs,0,Informations sur les revendeurs.,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos,Service,0,Toutes les informations relatives aux services.,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de route,Route-350-W,0,"Vélo de type routier, modèle Route-350-W",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,,Vêtements et accessoires,0,Toutes les informations concernant les vêtements et les accessoires,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Informations générales - Société,Sponsoring des cyclistes,0,"Événements actuels, profils des coureurs, comment participer.",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,VTT,VTT-500,0,"Vélo de type VTT, modèle VTT-500",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,,Vélos,0,"Informations sur tous les vélos, par groupe de produits",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos,Informations générales - Vélos,0,Relatives à tous les modèles de vélo,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de route,Route-750,0,"Vélo de type routier, modèle Route-750",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de route,Route-250,0,"Vélo de type routier, modèle Route-250",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos de tourisme,Tourisme-1000,0,"Vélo de type tourisme, modèle Tourisme-1000",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,,Informations générales - Société,0,Informations relatives à la location et à l'équipe,1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,VTT,VTT-300,0,"Vélo de type VTT, modèle VTT-300",1,1/24/2008,1/24/2008 18:24
+0,First name Last name,0,First name Last name,0,AdventureWorksCycle,0,Vélos,Pièces détachées,0,Informations sur les pièces détachées,1,1/24/2008,1/24/2008 18:24
