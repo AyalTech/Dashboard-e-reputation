@@ -1,16 +1,16 @@
-import dash
 import dash_core_components as dcc
 import dash_html_components as html
-from dash.dependencies import Input, Output, State
-from app import app
 import pandas as pd
+from dash.dependencies import Input, Output, State
+
+from app import app
 from panels import statistiques, recommandations, analyse_sentiment
 
-opportunities = pd.read_csv('C:/Users/Wizard/Desktop/M2 MLDS/PPD/dashboard/data/opportunity.csv', encoding='utf8')
-cases = pd.read_csv('C:/Users/Wizard/Desktop/M2 MLDS/PPD/dashboard/data/case.csv', encoding='utf8')
-leads = pd.read_csv('C:/Users/Wizard/Desktop/M2 MLDS/PPD/dashboard/data/lead.csv', encoding='utf8')
+opportunities = pd.read_csv('data/extracted_tweets.csv',  sep=";")
+cases = pd.read_csv('data/extracted_tweets.csv', sep=";")
+leads = pd.read_csv('data/extracted_tweets.csv', sep=';')
 server = app.server
-
+app.title = 'Dashboard e-réputation'
 app.layout = html.Div(
     [
         html.Div(
@@ -20,10 +20,10 @@ app.layout = html.Div(
                 html.Span(
                     className="app-title",
                     children=[
-                        dcc.Markdown("**Maquette PPD**"),
+                        dcc.Markdown("**Dashboard**"),
                         html.Span(
                             id="subtitle",
-                            children=dcc.Markdown("&nbsp Dashboard e-réputation"),
+                            children=dcc.Markdown("&nbsp e-réputation"),
                             style={"font-size": "1.8rem", "margin-top": "15px"},
                         ),
                     ],
@@ -94,23 +94,23 @@ app.layout = html.Div(
 )
 def display_page(pathname):
     tabs = [
-        dcc.Link("Statistiques", href="/dash-salesforce-crm/statistiques"),
-        dcc.Link("Analyse de sentiment", href="/dash-salesforce-crm/analyse_sentiment"),
-        dcc.Link("Recommandations", href="/dash-salesforce-crm/recommandations"),
+        dcc.Link("Statistiques", href="/dash-ppd/statistiques"),
+        dcc.Link("Analyse de sentiment", href="/dash-ppd/analyse_sentiment"),
+        dcc.Link("Recommandations", href="/dash-ppd/recommandations"),
     ]
-    if pathname == "/dash-salesforce-crm/statistiques":
+    if pathname == "/dash-ppd/statistiques":
         tabs[0] = dcc.Link(
             dcc.Markdown("**&#9632 Statistiques**"),
-            href="/dash-salesforce-crm/statistiques",
+            href="/dash-ppd/statistiques",
         )
         return statistiques.layout, tabs, tabs
-    elif pathname == "/dash-salesforce-crm/recommandations":
+    elif pathname == "/dash-ppd/recommandations":
         tabs[2] = dcc.Link(
-            dcc.Markdown("**&#9632 Recommandations**"), href="/dash-salesforce-crm/recommandations"
+            dcc.Markdown("**&#9632 Recommandations**"), href="/dash-ppd/recommandations"
         )
         return recommandations.layout, tabs, tabs
     tabs[1] = dcc.Link(
-        dcc.Markdown("**&#9632 Analyse de sentiment**"), href="/dash-salesforce-crm/analyse_sentiment"
+        dcc.Markdown("**&#9632 Analyse de sentiment**"), href="/dash-ppd/analyse_sentiment"
     )
     return analyse_sentiment.layout, tabs, tabs
 

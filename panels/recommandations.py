@@ -1,116 +1,114 @@
-import pandas as pd
+from datetime import date
+import plotly
 from dash.dependencies import Input, Output, State
+from app import app, indicator, millify, df_to_table
 import dash_core_components as dcc
 import dash_html_components as html
-from plotly import graph_objs as go
+import pandas as pd
+import plotly.graph_objs as go
+import plotly.figure_factory as ff
+import random
+import pycountry
+import numpy as np
 
-from app import app, indicator
-
-colors = {"background": "#F3F6FA", "background_div": "white"}
-
-accounts = pd.read_csv('C:/Users/Wizard/Desktop/M2 MLDS/PPD/dashboard/data/accounts.csv', encoding='utf8')
-contacts = pd.read_csv('C:/Users/Wizard/Desktop/M2 MLDS/PPD/dashboard/data/contacts.csv', encoding='utf8')
-users = pd.read_csv('C:/Users/Wizard/Desktop/M2 MLDS/PPD/dashboard/data/user.csv', encoding='utf8')
-
-# returns pie chart based on filters values
-# column makes the function reusable
+mentions_df = pd.read_csv('data/top_mentions.csv', sep=';')
 
 
-def pie_chart(df, column, priority, origin):
-    df = df.dropna(subset=["Type", "Reason", "Origin"])
-    nb_cases = len(df.index)
-    types = []
-    values = []
+def top_users():
+    table_data = pd.read_csv('data/users.csv', sep=";").head(10)
+    fig = ff.create_table(table_data, height_constant=25)
+    figure1 = go.Figure(data=fig, layout=go.Layout())
+    return figure1
 
-    # filter priority and origin
-    if priority == "all_p":
-        if origin == "all":
-            types = df[column].unique().tolist()
-        else:
-            types = df[df["Origin"] == origin][column].unique().tolist()
+def top_used_words():
+    words_df = pd.read_csv('data/words.csv', sep=";").head(10)
+    figure = go.Figure(data= go.Bar(x=words_df['count'], y=words_df['words'], orientation='h'), layout=go.Layout(
+        height=400
+        ))
+    return figure
+
+def get_country(text):
+    country_res = np.nan
+    for country in pycountry.countries:
+        if country.name.lower() in text.lower():
+            country_res = country.alpha_3
+    return country_res
+
+
+def get_country_df():
+    df = pd.read_csv('data/extracted_tweets.csv', sep=';')
+    df['user_location'] = df['user_location'].astype(str)
+    df.dropna(subset=['user_location'], inplace=True)
+    df['Country'] = df['user_location'].apply(get_country)
+    df.dropna(subset=['Country'], inplace=True)
+    df_country = df.groupby(['Country']).sum().reset_index()
+    df_country.replace(0, 1, inplace=True)
+    code_df = pd.read_csv('data/2014_world_gdp_with_codes.csv')
+    df_country_code = df_country.merge(code_df, left_on='Country', right_on='CODE', how='left')
+
+    return df_country_code
+
+
+def worldmap():
+    dff = get_country_df()
+    dff['hover_text'] = dff["COUNTRY"]
+    dff['sum'] = np.random.normal(100, 92, dff['hover_text'].shape[0])
+    trace = go.Choropleth(locations=dff['CODE'], z=np.log(dff['sum']),
+                          text=dff['hover_text'],
+                          hoverinfo="text",
+                          marker_line_color='white',
+                          autocolorscale=False,
+                          reversescale=True,
+                          colorscale="RdBu", marker={'line': {'color': 'rgb(180,180,180)', 'width': 0.5}},
+                          colorbar={"thickness": 10, "len": 0.3, "x": 0.9, "y": 0.7,
+                                    'title': {"text": 'persons', "side": "bottom"},
+                                    'tickvals': [2, 10],
+                                    'ticktext': ['100', '100,000']})
+    return go.Figure(data=[trace],
+                     layout=go.Layout(height=800, geo={'showframe': False, 'showcoastlines': False,
+                                                       'projection': {'type': "miller"}}))
+
+def converted_opportunities(period, source, df):
+    df = pd.read_csv("data/extracted_tweets.csv", sep =';')
+    df["Created On"] = pd.to_datetime(df["created_at"])
+
+    # source filtering
+    if source == "all_s":
+        df_final = df
     else:
-        if origin == "all":
-            types = df[df["Priority"] == priority][column].unique().tolist()
-        else:
-            types = (
-                df[(df["Priority"] == priority) & (df["Origin"] == origin)][column]
-                .unique()
-                .tolist()
-            )
+        df_final = df.loc[df["source"] == source]
 
+    # period filtering
+    if period == "1":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            30, unit="d")]
+    elif period == "3":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            3*30, unit="d")]
+    elif period == "12":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            12*30, unit="d")]
     # if no results were found
-    if types == []:
+    if df.empty:
         layout = dict(
             autosize=True, annotations=[dict(text="No results found", showarrow=False)]
         )
         return {"data": [], "layout": layout}
 
-    for case_type in types:
-        nb_type = df.loc[df[column] == case_type].shape[0]
-        values.append(nb_type / nb_cases * 100)
+    trace = go.Scatter(
+        x=df_final["Created On"],
+        y=df_final["isRetweeted"] +1,
+        name="converted opportunities",
+        fill="tozeroy",
+        fillcolor="#e6f2ff",
+    )
+
+    data = [trace]
 
     layout = go.Layout(
         autosize=True,
-        margin=dict(l=0, r=0, b=0, t=4, pad=8),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-    )
-
-    trace = go.Pie(
-        labels=types,
-        values=values,
-        marker={"colors": ["#264e86", "#0074e4", "#74dbef", "#eff0f4"]},
-    )
-
-    return {"data": [trace], "layout": layout}
-
-
-def cases_by_period(df, period, priority, origin):
-    df = df.dropna(subset=["Type", "Reason", "Origin"])
-    stages = df["Type"].unique()
-
-    # priority filtering
-    if priority != "all_p":
-        df = df[df["Priority"] == priority]
-
-    # period filtering
-    df["CreatedDate"] = pd.to_datetime(df["CreatedDate"], format="%Y-%m-%d")
-    if period == "W-MON":
-        df["CreatedDate"] = pd.to_datetime(df["CreatedDate"]) - pd.to_timedelta(
-            7, unit="d"
-        )
-    df = df.groupby([pd.Grouper(key="CreatedDate", freq=period), "Type"]).count()
-
-    dates = df.index.get_level_values("CreatedDate").unique()
-    dates = [str(i) for i in dates]
-
-    co = {  # colors for stages
-        "Electrical": "#264e86",
-        "Other": "#0074e4",
-        "Structural": "#74dbef",
-        "Mechanical": "#eff0f4",
-        "Electronic": "rgb(255, 127, 14)",
-    }
-
-    data = []
-    for stage in stages:
-        stage_rows = []
-        for date in dates:
-            try:
-                row = df.loc[(date, stage)]
-                stage_rows.append(row["IsDeleted"])
-            except Exception as e:
-                stage_rows.append(0)
-
-        data_trace = go.Bar(
-            x=dates, y=stage_rows, name=stage, marker=dict(color=co[stage])
-        )
-        data.append(data_trace)
-
-    layout = go.Layout(
-        autosize=True,
-        barmode="stack",
-        margin=dict(l=40, r=25, b=40, t=0, pad=4),
+        xaxis=dict(showgrid=False),
+        margin=dict(l=35, r=25, b=23, t=5, pad=4),
         paper_bgcolor="white",
         plot_bgcolor="white",
     )
@@ -118,560 +116,172 @@ def cases_by_period(df, period, priority, origin):
     return {"data": data, "layout": layout}
 
 
-def cases_by_account(cases):
-    cases = cases.dropna(subset=["AccountId"])
-    cases = pd.merge(cases, accounts, left_on="AccountId", right_on="Id")
-    cases = cases.groupby(["AccountId", "Name"]).count()
-    cases = cases.sort_values("IsDeleted")
-    data = [
-        go.Bar(
-            y=cases.index.get_level_values("Name"),
-            x=cases["IsDeleted"],
-            orientation="h",
-            marker=dict(color="#0073e4"),
-        )
-    ]  # x could be any column value since its a count
+# returns heat map figure
+def heat_map_fig(df, x, y):
+    z = []
+    for lead_type in y:
+        z_row = []
+        for stage in x:
+            probability = df[(df['screen_name'] == stage) & (df["Type"] == lead_type)][
+                "Probability"
+            ].mean()
+            z_row.append(probability)
+        z.append(z_row)
 
-    layout = go.Layout(
+    trace = dict(
+        type="heatmap", z=z, x=x, y=y, name="mean probability", colorscale="Blues"
+    )
+    layout = dict(
         autosize=True,
-        barmode="stack",
-        margin=dict(l=210, r=25, b=20, t=0, pad=4),
+        margin=dict(t=25, l=210, b=85, pad=4),
         paper_bgcolor="white",
         plot_bgcolor="white",
     )
 
-    return {"data": data, "layout": layout}
+    return go.Figure(data=[trace], layout=layout)
 
+
+# returns top 5 open opportunities
+def top_open_opportunities(df):
+    df = df.sort_values("user_followers_count", ascending=False)
+    cols = ['screen_name', "user_location", "user_followers_count", "source"]
+    df = df[cols].iloc[:5]
+    # only display 21 characters
+    df["screen_name"] = df["screen_name"].apply(lambda x: x[:30])
+    return df_to_table(df)
+
+
+def word_cloud():
+    words_df = pd.read_csv('data/words.csv', sep=";")
+    words = words_df['words'].to_list()
+    colors = [plotly.colors.DEFAULT_PLOTLY_COLORS[random.randrange(1, 10)] for i in range(30)]
+    weights = words_df['count'].to_list()
+
+    data1 = go.Scatter(x=[random.random() for i in range(30)],
+                       y=[random.random() for i in range(30)],
+                       mode='text',
+                       text=words,
+                       marker={'opacity': 0.3},
+                       textfont={'size': weights * 20,
+                                 'color': colors})
+    layout1 = go.Layout({
+        'xaxis': {'showgrid': False, 'showticklabels': False, 'zeroline': False},
+        'yaxis': {'showgrid': False, 'showticklabels': False, 'zeroline': False},
+        "height": 300})
+    graph_props = {'data': data1, 'layout': layout1}
+    return graph_props
 
 # returns modal (hidden by default)
-def modal():
-    accounts
-    return html.Div(
-        html.Div(
-            [
-                html.Div(
-                    [
-                        html.Div(
-                            [
-                                html.Span(
-                                    "New Case",
-                                    style={
-                                        "color": "#506784",
-                                        "fontWeight": "bold",
-                                        "fontSize": "20",
-                                    },
-                                ),
-                                html.Span(
-                                    "×",
-                                    id="cases_modal_close",
-                                    n_clicks=0,
-                                    style={
-                                        "float": "right",
-                                        "cursor": "pointer",
-                                        "marginTop": "0",
-                                        "marginBottom": "17",
-                                    },
-                                ),
-                            ],
-                            className="row",
-                            style={"borderBottom": "1px solid #C8D4E3"},
-                        ),
-                        html.Div(
-                            [
-                                html.Div(
-                                    [
-                                        html.P(
-                                            "Account name",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        html.Div(
-                                            dcc.Dropdown(
-                                                id="new_case_account",
-                                                options=[
-                                                    {
-                                                        "label": row["Name"],
-                                                        "value": row["Id"],
-                                                    }
-                                                    for index, row in accounts.iterrows()
-                                                ],
-                                                clearable=False,
-                                                value=accounts.iloc[0].Id,
-                                            )
-                                        ),
-                                        html.P(
-                                            "Priority",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Dropdown(
-                                            id="new_case_priority",
-                                            options=[
-                                                {"label": "High", "value": "High"},
-                                                {"label": "Medium", "value": "Medium"},
-                                                {"label": "Low", "value": "Low"},
-                                            ],
-                                            value="Medium",
-                                            clearable=False,
-                                        ),
-                                        html.P(
-                                            "Origin",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Dropdown(
-                                            id="new_case_origin",
-                                            options=[
-                                                {"label": "Phone", "value": "Phone"},
-                                                {"label": "Web", "value": "Web"},
-                                                {"label": "Email", "value": "Email"},
-                                            ],
-                                            value="Phone",
-                                            clearable=False,
-                                        ),
-                                        html.P(
-                                            "Reason",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Dropdown(
-                                            id="new_case_reason",
-                                            options=[
-                                                {
-                                                    "label": "Installation",
-                                                    "value": "Installation",
-                                                },
-                                                {
-                                                    "label": "Equipment Complexity",
-                                                    "value": "Equipment Complexity",
-                                                },
-                                                {
-                                                    "label": "Performance",
-                                                    "value": "Performance",
-                                                },
-                                                {
-                                                    "label": "Breakdown",
-                                                    "value": "Breakdown",
-                                                },
-                                                {
-                                                    "label": "Equipment Design",
-                                                    "value": "Equipment Design",
-                                                },
-                                                {
-                                                    "label": "Feedback",
-                                                    "value": "Feedback",
-                                                },
-                                                {"label": "Other", "value": "Other"},
-                                            ],
-                                            value="Installation",
-                                            clearable=False,
-                                        ),
-                                        html.P(
-                                            "Subject",
-                                            style={
-                                                "float": "left",
-                                                "marginTop": "4",
-                                                "marginBottom": "2",
-                                            },
-                                            className="row",
-                                        ),
-                                        dcc.Input(
-                                            id="new_case_subject",
-                                            placeholder="The Subject of the case",
-                                            type="text",
-                                            value="",
-                                            style={"width": "100%"},
-                                        ),
-                                    ],
-                                    className="six columns",
-                                    style={"paddingRight": "15"},
-                                ),
-                                html.Div(
-                                    [
-                                        html.P(
-                                            "Contact name",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        html.Div(
-                                            dcc.Dropdown(
-                                                id="new_case_contact",
-                                                options=[
-                                                    {
-                                                        "label": row["Name"],
-                                                        "value": row["Id"],
-                                                    }
-                                                    for index, row in contacts.iterrows()
-                                                ],
-                                                clearable=False,
-                                                value=contacts.iloc[0].Id,
-                                            )
-                                        ),
-                                        html.P(
-                                            "Type",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Dropdown(
-                                            id="new_case_type",
-                                            options=[
-                                                {
-                                                    "label": "Electrical",
-                                                    "value": "Electrical",
-                                                },
-                                                {
-                                                    "label": "Mechanical",
-                                                    "value": "Mechanical",
-                                                },
-                                                {
-                                                    "label": "Electronic",
-                                                    "value": "Electronic",
-                                                },
-                                                {
-                                                    "label": "Structural",
-                                                    "value": "Structural",
-                                                },
-                                                {"label": "Other", "value": "Other"},
-                                            ],
-                                            value="Electrical",
-                                        ),
-                                        html.P(
-                                            "Status",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Dropdown(
-                                            id="new_case_status",
-                                            options=[
-                                                {"label": "New", "value": "New"},
-                                                {
-                                                    "label": "Working",
-                                                    "value": "Working",
-                                                },
-                                                {
-                                                    "label": "Escalated",
-                                                    "value": "Escalated",
-                                                },
-                                                {"label": "Closed", "value": "Closed"},
-                                            ],
-                                            value="New",
-                                        ),
-                                        html.P(
-                                            "Supplied Email",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Input(
-                                            id="new_case_email",
-                                            placeholder="email",
-                                            type="email",
-                                            value="",
-                                            style={"width": "100%"},
-                                        ),
-                                        html.P(
-                                            "Description",
-                                            style={
-                                                "float": "left",
-                                                "marginTop": "4",
-                                                "marginBottom": "2",
-                                            },
-                                            className="row",
-                                        ),
-                                        dcc.Textarea(
-                                            id="new_case_description",
-                                            placeholder="Description of the case",
-                                            value="",
-                                            style={"width": "100%"},
-                                        ),
-                                    ],
-                                    className="six columns",
-                                    style={"paddingLeft": "15"},
-                                ),
-                            ],
-                            style={"marginTop": "10", "textAlign": "center"},
-                            className="row",
-                        ),
-                        html.Span(
-                            "Submit",
-                            id="submit_new_case",
-                            n_clicks=0,
-                            className="button button--primary add pretty_container",
-                        ),
-                    ],
-                    className="modal-content",
-                    style={"textAlign": "center", "border": "1px solid #C8D4E3"},
-                )
-            ],
-            className="modal",
-        ),
-        id="cases_modal",
-        style={"display": "none"},
-    )
-
 
 layout = [
     html.Div(
-        id="cases_grid",
+        id="opportunity_grid",
         children=[
             html.Div(
                 className="control dropdown-styles",
                 children=dcc.Dropdown(
-                    id="cases_period_dropdown",
+                    id="converted_opportunities_dropdown",
                     options=[
-                        {"label": "By day", "value": "D"},
-                        {"label": "By week", "value": "W-MON"},
-                        {"label": "By month", "value": "M"},
+                        {"label": "1 Mois", "value": "1"},
+                        {"label": "3 Mois", "value": "3"},
+                        {"label": "12 Mois", "value": "12"},
                     ],
                     value="D",
                     clearable=False,
                 ),
             ),
+
             html.Div(
                 className="control dropdown-styles",
                 children=dcc.Dropdown(
-                    id="priority_dropdown",
+                    id="source_dropdown",
                     options=[
-                        {"label": "All priority", "value": "all_p"},
-                        {"label": "High priority", "value": "High"},
-                        {"label": "Medium priority", "value": "Medium"},
-                        {"label": "Low priority", "value": "Low"},
+                        {"label": "Sources", "value": "all_s"},
+                        {"label": "Web App", "value": "Web App"},
+                        {"label": "iPhone", "value": "iPhone"},
+                        {"label": "Android", "value": "Android"},
                     ],
-                    value="all_p",
-                    clearable=False,
-                ),
-            ),
-            html.Div(
-                className="control dropdown-styles",
-                children=dcc.Dropdown(
-                    id="origin_dropdown",
-                    options=[
-                        {"label": "All origins", "value": "all"},
-                        {"label": "Phone", "value": "Phone"},
-                        {"label": "Web", "value": "Web"},
-                        {"label": "Email", "value": "Email"},
-                    ],
-                    value="all",
+                    value="all_s",
                     clearable=False,
                 ),
             ),
             html.Span(
-                "Add new",
-                id="new_case",
+                "Amazon",
+                id="new_opportunity_",
                 n_clicks=0,
-                className="button button--primary add pretty_container",
+                className="button pretty_container",
+            ),
+            html.Span(
+                "Apple",
+                id="new_opportunity_2",
+                n_clicks=0,
+                className="button pretty_container",
             ),
             html.Div(
-                id="cases_indicators",
+                id="opportunity_indicators",
                 className="row indicators",
                 children=[
-                    indicator("#00cc96", "Low priority cases", "left_cases_indicator"),
                     indicator(
-                        "#119DFF", "Medium priority cases", "middle_cases_indicator"
+                        "#00cc96", "Mentions", "left_opportunities_indicator"
                     ),
                     indicator(
-                        "#EF553B", "High priority cases", "right_cases_indicator"
+                        "#119DFF",
+                        "Tweets",
+                        "middle_opportunities_indicator",
+                    ),
+                    indicator(
+                        "#EF553B", "Utilisateurs uniques", "right_opportunities_indicator"
                     ),
                 ],
             ),
             html.Div(
-                id="cases_types_container",
-                className="pretty_container chart_div",
-                children=[
-                    html.P("Cases Type"),
-                    dcc.Graph(
-                        id="cases_types",
-                        config=dict(displayModeBar=False),
-                        style={"height": "89%", "width": "98%"},
-                    ),
-                ],
-            ),
-            html.Div(
-                id="cases_reasons_container",
+                id="converted_count_container",
                 className="chart_div pretty_container",
                 children=[
-                    html.P("Cases Reasons"),
-                    dcc.Graph(id="cases_reasons", config=dict(displayModeBar=False)),
+                    html.P("Volume de tweet"),
+                    dcc.Graph(
+                        id="converted_count",
+                        style={"height": "90%", "width": "98%"},
+                        config=dict(displayModeBar=False),
+                    ),
                 ],
             ),
             html.Div(
-                id="cases_by_period_container",
-                className="pretty_container chart_div",
+                id="opportunity_heatmap",
+                className="chart_div pretty_container",
                 children=[
-                    html.P("Cases over Time"),
-                    dcc.Graph(id="cases_by_period", config=dict(displayModeBar=False)),
+                    html.P('Termes les plus fréquents'),
+                    dcc.Graph(id='top_used_words',
+                              config=dict(displayModeBar=False),
+                              figure=top_used_words())
                 ],
             ),
             html.Div(
-                id="cases_by_account_container",
-                className="pretty_container chart_div",
+                id="top_open_container",
+                className="pretty_container",
                 children=[
-                    html.P("Cases by Company"),
-                    dcc.Graph(id="cases_by_account", config=dict(displayModeBar=False)),
+                    html.Div([html.P("Top Utilisateurs")], className="subtitle"),
+                    dcc.Graph(id='top_users',
+                              config=dict(displayModeBar=False),
+                              figure=top_users())
+                    # html.Div(id="top_open_opportunities", className="table"),
                 ],
             ),
-        ],
-    ),
-    #modal(),
-]
+            html.Div(
+                id="top_lost_container",
+                className="pretty_container",
+                children=[
+                    html.Div([html.P("Répartition par pays")], className="subtitle"),
+                    dcc.Graph(id="worldmap",
+                              config=dict(displayModeBar=False),
+                              figure=worldmap()
+                              )
+                ],
+            ),
+
+        ], className="pretty_container")]
 
 
-@app.callback(Output("left_cases_indicator", "children"), [Input("cases_df", "data")])
-def left_cases_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    low = len(df[(df["Priority"] == "Low") & (df["Status"] == "New")]["Priority"].index)
-    return dcc.Markdown("**{}**".format(low))
 
 
-@app.callback(Output("middle_cases_indicator", "children"), [Input("cases_df", "data")])
-def middle_cases_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    medium = len(
-        df[(df["Priority"] == "Medium") & (df["Status"] == "New")]["Priority"].index
-    )
-    return dcc.Markdown("**{}**".format(medium))
 
-
-@app.callback(Output("right_cases_indicator", "children"), [Input("cases_df", "data")])
-def right_cases_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    high = len(
-        df[(df["Priority"] == "High") & (df["Status"] == "New")]["Priority"].index
-    )
-    return dcc.Markdown("**{}**".format(high))
-
-
-@app.callback(
-    Output("cases_reasons", "figure"),
-    [
-        Input("priority_dropdown", "value"),
-        Input("origin_dropdown", "value"),
-        Input("cases_df", "data"),
-    ],
-)
-def cases_reasons_callback(priority, origin, df):
-    df = pd.read_json(df, orient="split")
-    chart = pie_chart(df, "Reason", priority, origin)
-    return chart
-
-
-@app.callback(
-    Output("cases_types", "figure"),
-    [
-        Input("priority_dropdown", "value"),
-        Input("origin_dropdown", "value"),
-        Input("cases_df", "data"),
-    ],
-)
-def cases_types_callback(priority, origin, df):
-    df = pd.read_json(df, orient="split")
-    chart = pie_chart(df, "Type", priority, origin)
-    chart["layout"]["legend"]["orientation"] = "h"
-    return chart
-
-
-@app.callback(
-    Output("cases_by_period", "figure"),
-    [
-        Input("cases_period_dropdown", "value"),
-        Input("origin_dropdown", "value"),
-        Input("priority_dropdown", "value"),
-        Input("cases_df", "data"),
-    ],
-)
-def cases_period_callback(period, origin, priority, df):
-    df = pd.read_json(df, orient="split")
-    return cases_by_period(df, period, priority, origin)
-
-
-@app.callback(Output("cases_by_account", "figure"), [Input("cases_df", "data")])
-def cases_account_callback(df):
-    df = pd.read_json(df, orient="split")
-    return cases_by_account(df)
-
-
-@app.callback(Output("cases_modal", "style"), [Input("new_case", "n_clicks")])
-def display_cases_modal_callback(n):
-    if n > 0:
-        return {"display": "block"}
-    return {"display": "none"}
-
-
-@app.callback(
-    Output("new_case", "n_clicks"),
-    [Input("cases_modal_close", "n_clicks"), Input("submit_new_case", "n_clicks")],
-)
-def close_modal_callback(n, n2):
-    return 0
-
-
-@app.callback(
-    Output("cases_df", "data"),
-    [Input("submit_new_case", "n_clicks")],
-    [
-        State("new_case_account", "value"),
-        State("new_case_origin", "value"),
-        State("new_case_reason", "value"),
-        State("new_case_subject", "value"),
-        State("new_case_contact", "value"),
-        State("new_case_type", "value"),
-        State("new_case_status", "value"),
-        State("new_case_description", "value"),
-        State("new_case_priority", "value"),
-        State("cases_df", "data"),
-    ],
-)
-def add_case_callback(
-    n_clicks,
-    account_id,
-    origin,
-    reason,
-    subject,
-    contact_id,
-    case_type,
-    status,
-    description,
-    priority,
-    current_df,
-):
-    if n_clicks > 0:
-        query = {
-            "AccountId": account_id,
-            "Origin": origin,
-            "Reason": reason,
-            "Subject": subject,
-            "ContactId": contact_id,
-            "Type": case_type,
-            "Status": status,
-            "Description": description,
-            "Priority": priority,
-        }
-
-
-        df = []
-        return df.to_json(orient="split")
-
-    return current_df

@@ -1,105 +1,71 @@
-# -*- coding: utf-8 -*-
-import pandas as pd
+import base64
+from datetime import date
+import plotly
 from dash.dependencies import Input, Output, State
+from app import app, indicator, millify, df_to_table
 import dash_core_components as dcc
 import dash_html_components as html
-from plotly import graph_objs as go
+import pandas as pd
+import plotly.graph_objs as go
+import plotly.figure_factory as ff
+from piplines import analysis
+import random
+import igraph as ig
+from wordcloud import WordCloud
 
-from app import app, indicator, df_to_table
 
-states = []
+mentions_df = pd.read_csv('data/top_mentions.csv', sep=';')
 
 
-# returns choropleth map figure based on status filter
-def choropleth_map(status, df):
-    if status == "open":
-        df = df[
-            (df["Status"] == "Open - Not Contacted")
-            | (df["Status"] == "Working - Contacted")
-        ]
+def top_users():
+    table_data = pd.read_csv('data/users.csv', sep=";").head(10)
+    fig = ff.create_table(table_data, height_constant=25)
+    figure1 = go.Figure(data=fig, layout=go.Layout())
+    return figure1
 
-    elif status == "converted":
-        df = df[df["Status"] == "Closed - Converted"]
 
-    elif status == "lost":
-        df = df[df["Status"] == "Closed - Not Converted"]
+def sentiment_pi_chart():
+    labels = ['Négatif', 'Positf', 'Neutre']
+    values = [analysis.SentimentAnalysis.NEGATIVE_PERCENTAGE,
+              analysis.SentimentAnalysis.POSITIVE_PERCENTAGE,
+              analysis.SentimentAnalysis.NEUTRAL_PERCENTAGE]
 
-    df = df.groupby("Name").count()
+    # Use `hole` to create a donut-like pie chart
+    fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.7)])
+    return fig
 
-    scl = [[0.0, "rgb(38, 78, 134)"], [1.0, "#0091D5"]]  # colors scale
 
-    data = [
-        dict(
-            type="choropleth",
-            colorscale=scl,
-            locations=df.index,
-            z=df["Id"],
-            locationmode="USA-states",
-            marker=dict(line=dict(color="rgb(255,255,255)", width=2)),
-            colorbar=dict(len=0.8),
+def converted_opportunities(period, source, df):
+    df = pd.read_csv("data/extracted_tweets.csv", sep=';')
+    df["Created On"] = pd.to_datetime(df["created_at"])
+
+    # source filtering
+    if source == "all_s":
+        df_final = df
+    else:
+        df_final = df.loc[df["source"] == source]
+
+    # period filtering
+    if period == "1":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            30, unit="d")]
+    elif period == "3":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            3 * 30, unit="d")]
+    elif period == "12":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            12 * 30, unit="d")]
+    # if no results were found
+    if df.empty:
+        layout = dict(
+            autosize=True, annotations=[dict(text="No results found", showarrow=False)]
         )
-    ]
-
-    layout = dict(
-        autosize=True,
-        geo=dict(
-            scope="usa",
-            projection=dict(type="albers usa"),
-            lakecolor="rgb(255, 255, 255)",
-        ),
-        margin=dict(l=10, r=10, t=0, b=0),
-    )
-    return dict(data=data, layout=layout)
-
-
-# returns pie chart that shows lead source repartition
-def lead_source(status, df):
-    if status == "open":
-        df = df[
-            (df["Status"] == "Open - Not Contacted")
-            | (df["Status"] == "Working - Contacted")
-        ]
-
-    elif status == "converted":
-        df = df[df["Status"] == "Closed - Converted"]
-
-    elif status == "lost":
-        df = df[df["Status"] == "Closed - Not Converted"]
-
-    nb_leads = len(df.index)
-    types = df["Company Name"].unique().tolist()
-    values = []
-
-    # compute % for each leadsource type
-    for case_type in types:
-        nb_type = df[df["Company Name"] == case_type].shape[0]
-        values.append(nb_type / nb_leads * 100)
-
-    trace = go.Pie(
-        labels=types,
-        values=values,
-        marker={"colors": ["#264e86", "#0074e4", "#74dbef", "#eff0f4"]},
-    )
-
-    layout = dict(autosize=True, margin=dict(l=15, r=10, t=0, b=65))
-    return dict(data=[trace], layout=layout)
-
-
-def converted_leads_count(period, df):
-    df["CreatedDate"] = pd.to_datetime(df["CreatedDate"], format="%Y-%m-%d")
-    df = df[df["Status"] == "Closed - Converted"]
-
-    df = (
-        df.groupby([pd.Grouper(key="CreatedDate", freq=period)])
-        .count()
-        .reset_index()
-        .sort_values("CreatedDate")
-    )
+        return {"data": [], "layout": layout}
 
     trace = go.Scatter(
-        x=df["CreatedDate"],
-        y=df["Id"],
-        name="converted leads",
+        x=df_final["Created On"],
+        y=df_final["isRetweeted"] + 1,
+        name="converted opportunities",
         fill="tozeroy",
         fillcolor="#e6f2ff",
     )
@@ -109,7 +75,7 @@ def converted_leads_count(period, df):
     layout = go.Layout(
         autosize=True,
         xaxis=dict(showgrid=False),
-        margin=dict(l=33, r=25, b=37, t=5, pad=4),
+        margin=dict(l=35, r=25, b=23, t=5, pad=4),
         paper_bgcolor="white",
         plot_bgcolor="white",
     )
@@ -117,363 +83,261 @@ def converted_leads_count(period, df):
     return {"data": data, "layout": layout}
 
 
-def modal():
-    return html.Div(
-        html.Div(
-            [
-                html.Div(
-                    [
-                        html.Div(
-                            [
-                                html.Span(
-                                    "New Lead",
-                                    style={
-                                        "color": "#506784",
-                                        "fontWeight": "bold",
-                                        "fontSize": "20",
-                                    },
-                                ),
-                                html.Span(
-                                    "×",
-                                    id="leads_modal_close",
-                                    n_clicks=0,
-                                    style={
-                                        "float": "right",
-                                        "cursor": "pointer",
-                                        "marginTop": "0",
-                                        "marginBottom": "17",
-                                    },
-                                ),
-                            ],
-                            className="row",
-                            style={"borderBottom": "1px solid #C8D4E3"},
-                        ),
-                        html.Div(
-                            [
-                                html.P(
-                                    ["Company Name"],
-                                    style={
-                                        "float": "left",
-                                        "marginTop": "4",
-                                        "marginBottom": "2",
-                                    },
-                                    className="row",
-                                ),
-                                dcc.Input(
-                                    id="new_lead_company",
-                                    placeholder="Enter company name",
-                                    type="text",
-                                    value="",
-                                    style={"width": "100%"},
-                                ),
-                                html.P(
-                                    "Company State",
-                                    style={
-                                        "textAlign": "left",
-                                        "marginBottom": "2",
-                                        "marginTop": "4",
-                                    },
-                                ),
-                                dcc.Dropdown(
-                                    id="new_lead_state",
-                                    options=[
-                                        {"label": state, "value": state}
-                                        for state in states
-                                    ],
-                                    value="NY",
-                                ),
-                                html.P(
-                                    "Status",
-                                    style={
-                                        "textAlign": "left",
-                                        "marginBottom": "2",
-                                        "marginTop": "4",
-                                    },
-                                ),
-                                dcc.Dropdown(
-                                    id="new_lead_status",
-                                    options=[
-                                        {
-                                            "label": "Open - Not Contacted",
-                                            "value": "Open - Not Contacted",
-                                        },
-                                        {
-                                            "label": "Working - Contacted",
-                                            "value": "Working - Contacted",
-                                        },
-                                        {
-                                            "label": "Closed - Converted",
-                                            "value": "Closed - Converted",
-                                        },
-                                        {
-                                            "label": "Closed - Not Converted",
-                                            "value": "Closed - Not Converted",
-                                        },
-                                    ],
-                                    value="Open - Not Contacted",
-                                ),
-                                html.P(
-                                    "Source",
-                                    style={
-                                        "textAlign": "left",
-                                        "marginBottom": "2",
-                                        "marginTop": "4",
-                                    },
-                                ),
-                                dcc.Dropdown(
-                                    id="new_lead_source",
-                                    options=[
-                                        {"label": "Web", "value": "Web"},
-                                        {
-                                            "label": "Phone Inquiry",
-                                            "value": "Phone Inquiry",
-                                        },
-                                        {
-                                            "label": "Partner Referral",
-                                            "value": "Partner Referral",
-                                        },
-                                        {
-                                            "label": "Purchased List",
-                                            "value": "Purchased List",
-                                        },
-                                        {"label": "Other", "value": "Other"},
-                                    ],
-                                    value="Web",
-                                ),
-                            ],
-                            className="row",
-                            style={"padding": "2% 8%"},
-                        ),
-                        html.Span(
-                            "Submit",
-                            id="submit_new_lead",
-                            n_clicks=0,
-                            className="button button--primary add pretty_container",
-                        ),
-                    ],
-                    className="modal-content",
-                    style={"textAlign": "center"},
-                )
-            ],
-            className="modal",
-        ),
-        id="leads_modal",
-        style={"display": "none"},
+# returns heat map figure
+def heat_map_fig(df, x, y):
+    z = []
+    for lead_type in y:
+        z_row = []
+        for stage in x:
+            probability = df[(df['screen_name'] == stage) & (df["Type"] == lead_type)][
+                "Probability"
+            ].mean()
+            z_row.append(probability)
+        z.append(z_row)
+
+    trace = dict(
+        type="heatmap", z=z, x=x, y=y, name="mean probability", colorscale="Blues"
     )
+    layout = dict(
+        autosize=True,
+        margin=dict(t=25, l=210, b=85, pad=4),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+    )
+
+    return go.Figure(data=[trace], layout=layout)
+
+
+# returns top 5 open opportunities
+def top_open_opportunities(df):
+    df = df.sort_values("user_followers_count", ascending=False)
+    cols = ['screen_name', "user_location", "user_followers_count", "source"]
+    df = df[cols].iloc[:5]
+    # only display 21 characters
+    df["screen_name"] = df["screen_name"].apply(lambda x: x[:30])
+    return df_to_table(df)
+
+
+def word_cloud():
+    words_df = pd.read_csv('data/words.csv', sep=";")
+    words = words_df['words'].to_list()
+    colors = [plotly.colors.DEFAULT_PLOTLY_COLORS[random.randrange(1, 10)] for i in range(30)]
+    weights = words_df['count'].to_list()
+
+    data1 = go.Scatter(x=[random.random() for i in range(30)],
+                       y=[random.random() for i in range(30)],
+                       mode='text',
+                       text=words,
+                       marker={'opacity': 0.3},
+                       textfont={'size': weights,
+                                 'color': colors})
+    layout1 = go.Layout({
+        'xaxis': {'showgrid': False, 'showticklabels': False, 'zeroline': False},
+        'yaxis': {'showgrid': False, 'showticklabels': False, 'zeroline': False},
+        "height": 400})
+    graph_props = {'data': data1, 'layout': layout1}
+    fig = go.Figure(graph_props)
+    return fig
+
+
+def word_cloud_2():
+    words_df = pd.read_csv('data/clean_tweets.csv', sep=";")
+    # word cloud visualization
+    allWords = ' '.join([twts for twts in words_df['text_clean'].astype(str)])
+    wordCloud = WordCloud(width=800, height=500, random_state=21, max_font_size=110, background_color="white").generate(
+        allWords)
+    wordCloud.to_file('data/wordcloud.png')
+
+
+#
+word_cloud_2()
+coclust_img = 'data/coclust.jpg'
+graph_img = 'data/graph.png'
+wordcloud_img = 'data/wordcloud.png'
+coclust_img_base64 = base64.b64encode(open(coclust_img, 'rb').read()).decode('ascii')
+graph_img_base64 = base64.b64encode(open(graph_img, 'rb').read()).decode('ascii')
+wordcloud_img_base64 = base64.b64encode(open(wordcloud_img, 'rb').read()).decode('ascii')
+
+
+def graph_layout():
+    G = ig.Graph.Read_Lgl('data/graph.txt')
+    labels = list(G.vs['name'])
+    N = len(labels)
+    E = [e.tuple for e in G.es]  # list of edges
+    layt = G.layout('kk')  # kamada-kawai layout
+    Xn = [layt[k][0] for k in range(N)]
+    Yn = [layt[k][1] for k in range(N)]
+    Xe = []
+    Ye = []
+    for e in E:
+        Xe += [layt[e[0]][0], layt[e[1]][0], None]
+        Ye += [layt[e[0]][1], layt[e[1]][1], None]
+
+    trace1 = go.Scatter(x=Xe,
+                        y=Ye,
+                        mode='lines',
+                        line=dict(color='rgb(210,210,210)', width=1),
+                        hoverinfo='none'
+                        )
+    trace2 = go.Scatter(x=Xn,
+                        y=Yn,
+                        mode='markers',
+                        name='ntw',
+                        marker=dict(symbol='circle-dot',
+                                    size=5,
+                                    color='#6959CD',
+                                    line=dict(color='rgb(50,50,50)', width=0.5)
+                                    ),
+                        text=labels,
+                        hoverinfo='text'
+                        )
+
+    axis = dict(showline=False,  # hide axis line, grid, ticklabels and  title
+                zeroline=False,
+                showgrid=False,
+                showticklabels=False,
+                title=''
+                )
+
+    width = 800
+    height = 800
+    layout = go.Layout(
+        font=dict(size=12),
+        showlegend=False,
+        autosize=False,
+        width=width,
+        height=height,
+        xaxis=axis,
+        yaxis=axis,
+        margin=dict(
+            l=40,
+            r=40,
+            b=85,
+            t=100,
+        ),
+        hovermode='closest',
+        annotations=[
+            dict(
+                showarrow=False,
+                text='',
+                xref='paper',
+                yref='paper',
+                x=0,
+                y=-0.1,
+                xanchor='left',
+                yanchor='bottom',
+                font=dict(
+                    size=14
+                )
+            )
+        ]
+    )
+
+    data = [trace1, trace2]
+    return go.Figure(data=data, layout=layout)
 
 
 layout = [
     html.Div(
-        id="lead_grid",
+        id="opportunity_grid",
         children=[
             html.Div(
-                className="two columns dd-styles",
+                className="control dropdown-styles",
                 children=dcc.Dropdown(
-                    id="converted_leads_dropdown",
+                    id="converted_opportunities_dropdown",
                     options=[
-                        {"label": "By day", "value": "D"},
-                        {"label": "By week", "value": "W-MON"},
-                        {"label": "By month", "value": "M"},
+                        {"label": "1 Mois", "value": "1"},
+                        {"label": "3 Mois", "value": "3"},
+                        {"label": "12 Mois", "value": "12"},
                     ],
                     value="D",
                     clearable=False,
                 ),
             ),
+
             html.Div(
-                className="two columns dd-styles",
+                className="control dropdown-styles",
                 children=dcc.Dropdown(
-                    id="lead_source_dropdown",
+                    id="source_dropdown",
                     options=[
-                        {"label": "All status", "value": "all"},
-                        {"label": "Open leads", "value": "open"},
-                        {"label": "Converted leads", "value": "converted"},
-                        {"label": "Lost leads", "value": "lost"},
+                        {"label": "Sources", "value": "all_s"},
+                        {"label": "Web App", "value": "Web App"},
+                        {"label": "iPhone", "value": "iPhone"},
+                        {"label": "Android", "value": "Android"},
                     ],
-                    value="all",
+                    value="all_s",
                     clearable=False,
                 ),
             ),
             html.Span(
-                "Add new",
-                id="new_lead",
+                "Amazon",
+                id="new_opportunity_2",
                 n_clicks=0,
                 className="button pretty_container",
             ),
             html.Div(
+                id="opportunity_indicators",
                 className="row indicators",
                 children=[
-                    indicator("#00cc96", "Converted Leads", "left_leads_indicator"),
-                    indicator("#119DFF", "Open Leads", "middle_leads_indicator"),
-                    indicator("#EF553B", "Conversion Rates", "right_leads_indicator"),
+                    indicator(
+                        "#00cc96", "Sentiment positif", "sentiment_positifs_indicator"
+                    ),
+                    indicator(
+                        "#119DFF",
+                        "Tweets analysés",
+                        "middle_opportunities_indicator",
+                    ),
+                    indicator(
+                        "#EF553B", "Utilisateurs uniques", "right_opportunities_indicator"
+                    ),
                 ],
             ),
             html.Div(
-                id="leads_per_state",
+                id="converted_count_container",
                 className="chart_div pretty_container",
                 children=[
-                    html.P("Leads count per state"),
+                    html.P("Repartition des sentiments"),
                     dcc.Graph(
-                        id="map",
-                        style={"height": "90%", "width": "98%"},
+                        id="pie_chart",
                         config=dict(displayModeBar=False),
+                        figure=sentiment_pi_chart(),
                     ),
                 ],
             ),
             html.Div(
-                id="leads_source_container",
-                className="six columns chart_div pretty_container",
+                id="opportunity_heatmap",
+                className="chart_div pretty_container",
                 children=[
-                    html.P("Leads by source"),
-                    dcc.Graph(
-                        id="lead_source",
-                        style={"height": "90%", "width": "98%"},
-                        config=dict(displayModeBar=False),
-                    ),
+                    html.P('Nuage de mots'),
+                    html.Img(src='data:image/png;base64,{}'.format(wordcloud_img_base64), className="center")
+                    # dcc.Graph(id='wordcloud', config=dict(displayModeBar=False), figure=word_cloud())
                 ],
             ),
             html.Div(
-                id="converted_leads_container",
-                className="six columns chart_div pretty_container",
+                id="top_open_container",
+                className="pretty_container",
                 children=[
-                    html.P("Converted Leads count"),
-                    dcc.Graph(
-                        id="converted_leads",
-                        style={"height": "90%", "width": "98%"},
-                        config=dict(displayModeBar=False),
-                    ),
+                    html.Div([html.P("Co-clustring")], className="subtitle"),
+                    html.Img(src='data:image/png;base64,{}'.format(coclust_img_base64))
                 ],
             ),
-            html.Div(id="leads_table", className="row pretty_container table"),
-        ],
-    ),
-    modal(),
-]
+            html.Div(
+                id="top_lost_container",
+                className="pretty_container",
+                children=[
+                    html.Div([html.P("Graph")], className="subtitle"),
+                    # dcc.Graph(id='graph', config=dict(displayModeBar=False), figure=graph_layout())
+
+                    html.Img(src='data:image/png;base64,{}'.format(graph_img_base64))
+                ],
+            ),
+
+        ], className="pretty_container")]
 
 
-# updates left indicator based on df updates
-@app.callback(Output("left_leads_indicator", "children"), [Input("leads_df", "data")])
-def left_leads_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    converted_leads = len(df[df["Status"] == "Closed - Converted"].index)
-    return dcc.Markdown("**{}**".format(converted_leads))
-
-
-# updates middle indicator based on df updates
-@app.callback(Output("middle_leads_indicator", "children"), [Input("leads_df", "data")])
-def middle_leads_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    open_leads = len(
-        df[
-            (df["Status"] == "Open - Not Contacted")
-            | (df["Status"] == "Working - Contacted")
-        ].index
-    )
-    return dcc.Markdown("**{}**".format(open_leads))
-
-
-# updates right indicator based on df updates
-@app.callback(Output("right_leads_indicator", "children"), [Input("leads_df", "data")])
-def right_leads_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    converted_leads = len(df[df["Status"] == "Closed - Converted"].index)
-    lost_leads = len(df[df["Status"] == "Closed - Not Converted"].index)
-    conversion_rates = converted_leads / (converted_leads + lost_leads +1) * 100
-    conversion_rates = "%.2f" % conversion_rates + "%"
-    return dcc.Markdown("**{}**".format(conversion_rates))
-
-
-
-# update pie chart figure based on dropdown's value and df updates
 @app.callback(
-    Output("lead_source", "figure"),
-    [Input("lead_source_dropdown", "value"), Input("leads_df", "data")],
+    Output("sentiment_positifs_indicator", "children"),
+    [Input("opportunities_df", "data")],
 )
-def lead_source_callback(status, df):
-    df = pd.read_json(df, orient="split")
-    return lead_source(status, df)
-
-
-# update heat map figure based on dropdown's value and df updates
-@app.callback(
-    Output("map", "figure"),
-    [Input("lead_source_dropdown", "value"), Input("leads_df", "data")],
-)
-def map_callback(status, df):
-    df = pd.read_json(df, orient="split")
-    return choropleth_map(status, df)
-
-
-# update table based on dropdown's value and df updates
-@app.callback(
-    Output("leads_table", "children"),
-    [Input("lead_source_dropdown", "value"), Input("leads_df", "data")],
-)
-def leads_table_callback(status, df):
-    df = pd.read_json(df, orient="split")
-    if status == "open":
-        df = df[
-            (df["Status"] == "Open - Not Contacted")
-            | (df["Status"] == "Working - Contacted")
-        ]
-    elif status == "converted":
-        df = df[df["Status"] == "Closed - Converted"]
-    elif status == "lost":
-        df = df[df["Status"] == "Closed - Not Converted"]
-    df = df[["CreatedDate", "Status", "Company Name", "Name", "Company Name"]]
-    return df_to_table(df)
-
-
-# update pie chart figure based on dropdown's value and df updates
-@app.callback(
-    Output("converted_leads", "figure"),
-    [Input("converted_leads_dropdown", "value"), Input("leads_df", "data")],
-)
-def converted_leads_callback(period, df):
-    df = pd.read_json(df, orient="split")
-    return converted_leads_count(period, df)
-
-
-# hide/show modal
-@app.callback(Output("leads_modal", "style"), [Input("new_lead", "n_clicks")])
-def display_leads_modal_callback(n):
-    if n > 0:
-        return {"display": "block"}
-    return {"display": "none"}
-
-
-# reset to 0 add button n_clicks property
-@app.callback(
-    Output("new_lead", "n_clicks"),
-    [Input("leads_modal_close", "n_clicks"), Input("submit_new_lead", "n_clicks")],
-)
-def close_modal_callback(n, n2):
-    return 0
-
-
-# add new lead to salesforce and stores new df in hidden div
-@app.callback(
-    Output("leads_df", "data"),
-    [Input("submit_new_lead", "n_clicks")],
-    [
-        State("new_lead_status", "value"),
-        State("new_lead_state", "value"),
-        State("new_lead_company", "value"),
-        State("new_lead_source", "value"),
-        State("leads_df", "data"),
-    ],
-)
-def add_lead_callback(n_clicks, status, state, company, source, current_df):
-    if n_clicks > 0:
-        if company == "":
-            company = "Not named yet"
-        query = {
-            "LastName": company,
-            "Company": company,
-            "Status": status,
-            "State": state,
-            "LeadSource": source,
-        }
-        df = []
-        return df.to_json(orient="split")
-
-    return current_df
+def sentiment_positifs_indicator_callback(df):
+    return dcc.Markdown("**{}**".format(analysis.SentimentAnalysis.POSITIVE_PERCENTAGE) + "%")

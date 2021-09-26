@@ -1,0 +1,16 @@
+# book
+book 0
+# tax
+tax 0
+corpor 0.6506326257229024
+paid 0.7658737817998408
+sale 0.9422464827497081
+# corpor
+corpor 0
+paid 0.23599132197983314
+sale 0.4413846284761147
+# paid
+paid 0
+sale 0.251977874776943
+# sale
+sale 0

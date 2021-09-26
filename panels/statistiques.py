@@ -1,35 +1,97 @@
-# -*- coding: utf-8 -*-
 from datetime import date
-import pandas as pd
+import plotly
 from dash.dependencies import Input, Output, State
+from app import app, indicator, millify, df_to_table
 import dash_core_components as dcc
 import dash_html_components as html
-from plotly import graph_objs as go
+import pandas as pd
+import plotly.graph_objs as go
+import plotly.figure_factory as ff
+import random
+import pycountry
+import numpy as np
+from piplines import analysis, extraction
 
-from app import app, indicator, millify, df_to_table
+FIRST_USE = True
+
+
+def top_users():
+    table_data = pd.read_csv('data/users.csv', sep=";").head(10)
+    fig = ff.create_table(table_data, height_constant=25)
+    figure1 = go.Figure(data=fig, layout=go.Layout())
+    return figure1
+
+
+def top_used_words():
+    words_df = pd.read_csv('data/words.csv', sep=";").head(10)
+    figure = go.Figure(data=go.Bar(x=words_df['count'], y=words_df['words'], orientation='h'), layout=go.Layout(
+        height=400
+    ))
+    return figure
+
+
+def get_country(text):
+    country_res = np.nan
+    for country in pycountry.countries:
+        if country.name.lower() in text.lower():
+            country_res = country.alpha_3
+    return country_res
+
+
+def get_country_df():
+    df = pd.read_csv('data/extracted_tweets.csv', sep=';')
+    df['user_location'] = df['user_location'].astype(str)
+    df.dropna(subset=['user_location'], inplace=True)
+    df['Country'] = df['user_location'].apply(get_country)
+    df.dropna(subset=['Country'], inplace=True)
+    df_country = df.groupby(['Country']).sum().reset_index()
+    df_country.replace(0, 1, inplace=True)
+    code_df = pd.read_csv('data/2014_world_gdp_with_codes.csv')
+    df_country_code = df_country.merge(code_df, left_on='Country', right_on='CODE', how='left')
+
+    return df_country_code
+
+
+def worldmap():
+    dff = get_country_df()
+    dff['hover_text'] = dff["COUNTRY"]
+    dff['sum'] = np.random.normal(100, 92, dff['hover_text'].shape[0])
+    trace = go.Choropleth(locations=dff['CODE'], z=np.log(dff['sum']),
+                          text=dff['hover_text'],
+                          hoverinfo="text",
+                          marker_line_color='white',
+                          autocolorscale=False,
+                          reversescale=True,
+                          colorscale="RdBu", marker={'line': {'color': 'rgb(180,180,180)', 'width': 0.5}},
+                          colorbar={"thickness": 10, "len": 0.3, "x": 0.9, "y": 0.7,
+                                    'title': {"text": 'persons', "side": "bottom"},
+                                    'tickvals': [2, 10],
+                                    'ticktext': ['100', '100,000']})
+    return go.Figure(data=[trace],
+                     layout=go.Layout(height=800, geo={'showframe': False, 'showcoastlines': False,
+                                                       'projection': {'type': "miller"}}))
 
 
 def converted_opportunities(period, source, df):
-    df["Created On"] = pd.to_datetime(df["Created On"], format="%Y-%m-%d")
+    df = pd.read_csv("data/extracted_tweets.csv", sep=';')
+    df["Created On"] = pd.to_datetime(df["created_at"])
 
     # source filtering
     if source == "all_s":
-        df = df[df["Est. Close Date Year"] == 1]
+        df_final = df
     else:
-        df = df[(df["LeadSource"] == source) & (df["Est. Close Date Year"] == 1)]
+        df_final = df.loc[df["source"] == source]
 
     # period filtering
-    if period == "W-MON":
-        df["Created On"] = pd.to_datetime(df["Created On"]) - pd.to_timedelta(
-            7, unit="d"
-        )
-    df = (
-        df.groupby([pd.Grouper(key="Created On", freq=period)])
-        .count()
-        .reset_index()
-        .sort_values("Created On")
-    )
-
+    if period == "1":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            30, unit="d")]
+    elif period == "3":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            3 * 30, unit="d")]
+    elif period == "12":
+        df_final = df_final.loc[df_final["Created On"] >= pd.to_datetime(df_final["Created On"]) - pd.to_timedelta(
+            12 * 30, unit="d")]
     # if no results were found
     if df.empty:
         layout = dict(
@@ -38,8 +100,8 @@ def converted_opportunities(period, source, df):
         return {"data": [], "layout": layout}
 
     trace = go.Scatter(
-        x=df["Created On"],
-        y=df["Est. Close Date Year"],
+        x=df_final["Created On"],
+        y=df_final["isRetweeted"] + 1,
         name="converted opportunities",
         fill="tozeroy",
         fillcolor="#e6f2ff",
@@ -64,7 +126,7 @@ def heat_map_fig(df, x, y):
     for lead_type in y:
         z_row = []
         for stage in x:
-            probability = df[(df["Topic"] == stage) & (df["Type"] == lead_type)][
+            probability = df[(df['screen_name'] == stage) & (df["Type"] == lead_type)][
                 "Probability"
             ].mean()
             z_row.append(probability)
@@ -85,22 +147,33 @@ def heat_map_fig(df, x, y):
 
 # returns top 5 open opportunities
 def top_open_opportunities(df):
-    df = df.sort_values("Est. Revenue", ascending=True)
-    cols = ["Created On", "Potential Customer", "Est. Revenue", "Topic"]
+    df = df.sort_values("user_followers_count", ascending=False)
+    cols = ['screen_name', "user_location", "user_followers_count", "source"]
     df = df[cols].iloc[:5]
     # only display 21 characters
-    df["Potential Customer"] = df["Potential Customer"].apply(lambda x: x[:30])
+    df["screen_name"] = df["screen_name"].apply(lambda x: x[:30])
     return df_to_table(df)
 
 
-# returns top 5 lost opportunities
-def top_lost_opportunities(df):
-    df = df[df["Topic"] == "Closed Lost"]
-    cols = ["Created On", "Potential Customer", "Est. Revenue", "Topic"]
-    df = df[cols].sort_values("Est. Revenue", ascending=False).iloc[:5]
-    # only display 21 characters
-    df["Potential Customer"] = df["Potential Customer"].apply(lambda x: x[:30])
-    return df_to_table(df)
+def word_cloud():
+    words_df = pd.read_csv('data/words.csv', sep=";")
+    words = words_df['words'].to_list()
+    colors = [plotly.colors.DEFAULT_PLOTLY_COLORS[random.randrange(1, 10)] for i in range(30)]
+    weights = words_df['count'].to_list()
+
+    data1 = go.Scatter(x=[random.random() for i in range(30)],
+                       y=[random.random() for i in range(30)],
+                       mode='text',
+                       text=words,
+                       marker={'opacity': 0.3},
+                       textfont={'size': weights * 20,
+                                 'color': colors})
+    layout1 = go.Layout({
+        'xaxis': {'showgrid': False, 'showticklabels': False, 'zeroline': False},
+        'yaxis': {'showgrid': False, 'showticklabels': False, 'zeroline': False},
+        "height": 300})
+    graph_props = {'data': data1, 'layout': layout1}
+    return graph_props
 
 
 # returns modal (hidden by default)
@@ -113,7 +186,7 @@ def modal():
                         html.Div(
                             [
                                 html.Span(
-                                    "New Opportunity",
+                                    "Sélection Entreprise",
                                     style={
                                         "color": "#506784",
                                         "fontWeight": "bold",
@@ -140,7 +213,7 @@ def modal():
                                 html.Div(
                                     [
                                         html.P(
-                                            ["Potential Customer"],
+                                            ["Entreprise"],
                                             style={
                                                 "float": "left",
                                                 "marginTop": "4",
@@ -150,13 +223,13 @@ def modal():
                                         ),
                                         dcc.Input(
                                             id="new_opportunity_name",
-                                            placeholder="Potential Customer of the opportunity",
+                                            placeholder="Entrez le nom d'une entreprise",
                                             type="text",
                                             value="",
                                             style={"width": "100%"},
                                         ),
                                         html.P(
-                                            ["Topic"],
+                                            ['Langue'],
                                             style={
                                                 "textAlign": "left",
                                                 "marginBottom": "2",
@@ -167,79 +240,20 @@ def modal():
                                             id="new_opportunity_stage",
                                             options=[
                                                 {
-                                                    "label": "Prospecting",
-                                                    "value": "Prospecting",
+                                                    "label": "Anglais",
+                                                    "value": "en",
                                                 },
                                                 {
-                                                    "label": "Qualification",
-                                                    "value": "Qualification",
-                                                },
-                                                {
-                                                    "label": "Needs Analysis",
-                                                    "value": "Needs Analysis",
-                                                },
-                                                {
-                                                    "label": "Value Proposition",
-                                                    "value": "Value Proposition",
-                                                },
-                                                {
-                                                    "label": "Id. Decision Makers",
-                                                    "value": "Closed",
-                                                },
-                                                {
-                                                    "label": "Perception Analysis",
-                                                    "value": "Perception Analysis",
-                                                },
-                                                {
-                                                    "label": "Proposal/Price Quote",
-                                                    "value": "Proposal/Price Quote",
-                                                },
-                                                {
-                                                    "label": "Negotiation/Review",
-                                                    "value": "Negotiation/Review",
-                                                },
-                                                {
-                                                    "label": "Closed/Won",
-                                                    "value": "Closed Won",
-                                                },
-                                                {
-                                                    "label": "Closed/Lost",
-                                                    "value": "Closed Lost",
-                                                },
+                                                    "label": "Français",
+                                                    "value": "fr",
+                                                }
                                             ],
                                             clearable=False,
-                                            value="Prospecting",
+                                            value="Anglais",
                                         ),
+
                                         html.P(
-                                            "Source",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Dropdown(
-                                            id="new_opportunity_source",
-                                            options=[
-                                                {"label": "Web", "value": "Web"},
-                                                {
-                                                    "label": "Phone Inquiry",
-                                                    "value": "Phone Inquiry",
-                                                },
-                                                {
-                                                    "label": "Partner Referral",
-                                                    "value": "Partner Referral",
-                                                },
-                                                {
-                                                    "label": "Purchased List",
-                                                    "value": "Purchased List",
-                                                },
-                                                {"label": "Other", "value": "Other"},
-                                            ],
-                                            value="Web",
-                                        ),
-                                        html.P(
-                                            ["Close Date"],
+                                            ["Date de début"],
                                             style={
                                                 "textAlign": "left",
                                                 "marginBottom": "2",
@@ -263,37 +277,7 @@ def modal():
                                 html.Div(
                                     [
                                         html.P(
-                                            "Type",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Dropdown(
-                                            id="new_opportunity_type",
-                                            options=[
-                                                {
-                                                    "label": "Existing Customer - Replacement",
-                                                    "value": "Existing Customer - Replacement",
-                                                },
-                                                {
-                                                    "label": "New Customer",
-                                                    "value": "New Customer",
-                                                },
-                                                {
-                                                    "label": "Existing Customer - Upgrade",
-                                                    "value": "Existing Customer - Upgrade",
-                                                },
-                                                {
-                                                    "label": "Existing Customer - Downgrade",
-                                                    "value": "Existing Customer - Downgrade",
-                                                },
-                                            ],
-                                            value="New Customer",
-                                        ),
-                                        html.P(
-                                            "Est. Revenue",
+                                            "Nombre de tweets à extraire",
                                             style={
                                                 "textAlign": "left",
                                                 "marginBottom": "2",
@@ -302,28 +286,11 @@ def modal():
                                         ),
                                         dcc.Input(
                                             id="new_opportunity_amount",
-                                            placeholder="0",
+                                            placeholder="100",
                                             type="number",
                                             value="",
                                             style={"width": "100%"},
-                                        ),
-                                        html.P(
-                                            "Probability",
-                                            style={
-                                                "textAlign": "left",
-                                                "marginBottom": "2",
-                                                "marginTop": "4",
-                                            },
-                                        ),
-                                        dcc.Input(
-                                            id="new_opportunity_probability",
-                                            placeholder="0",
-                                            type="number",
-                                            max=100,
-                                            step=1,
-                                            value="",
-                                            style={"width": "100%"},
-                                        ),
+                                        )
                                     ],
                                     className="six columns",
                                     style={"paddingLeft": "15"},
@@ -333,7 +300,7 @@ def modal():
                             style={"paddingTop": "2%"},
                         ),
                         html.Span(
-                            "Submit",
+                            "Lancer l'analyse",
                             id="submit_new_opportunity",
                             n_clicks=0,
                             className="button button--primary add pretty_container",
@@ -359,9 +326,9 @@ layout = [
                 children=dcc.Dropdown(
                     id="converted_opportunities_dropdown",
                     options=[
-                        {"label": "1 Mois", "value": "D"},
-                        {"label": "3 Mois", "value": "W-MON"},
-                        {"label": "12 Mois", "value": "M"},
+                        {"label": "1 Mois", "value": "1"},
+                        {"label": "3 Mois", "value": "3"},
+                        {"label": "12 Mois", "value": "12"},
                     ],
                     value="D",
                     clearable=False,
@@ -374,19 +341,16 @@ layout = [
                     id="source_dropdown",
                     options=[
                         {"label": "Sources", "value": "all_s"},
-                        {"label": "Web", "value": "Web"},
-                        {"label": "Word of Mouth", "value": "Word of mouth"},
-                        {"label": "Phone Inquiry", "value": "Phone Inquiry"},
-                        {"label": "Partner Referral", "value": "Partner Referral"},
-                        {"label": "Purchased List", "value": "Purchased List"},
-                        {"label": "Other", "value": "Other"},
+                        {"label": "Web App", "value": "Web App"},
+                        {"label": "iPhone", "value": "iPhone"},
+                        {"label": "Android", "value": "Android"},
                     ],
                     value="all_s",
                     clearable=False,
                 ),
             ),
             html.Span(
-                "APPLE",
+                "Amazon",
                 id="new_opportunity",
                 n_clicks=0,
                 className="button pretty_container",
@@ -400,7 +364,7 @@ layout = [
                     ),
                     indicator(
                         "#119DFF",
-                        "Tweet",
+                        "Tweets",
                         "middle_opportunities_indicator",
                     ),
                     indicator(
@@ -412,7 +376,7 @@ layout = [
                 id="converted_count_container",
                 className="chart_div pretty_container",
                 children=[
-                    html.P("Volume de mention"),
+                    html.P("Volume de tweet"),
                     dcc.Graph(
                         id="converted_count",
                         style={"height": "90%", "width": "98%"},
@@ -424,12 +388,10 @@ layout = [
                 id="opportunity_heatmap",
                 className="chart_div pretty_container",
                 children=[
-                    html.P("Termes les plus fréquents"),
-                    dcc.Graph(
-                        id="heatmap",
-                        style={"height": "90%", "width": "98%"},
-                        config=dict(displayModeBar=False),
-                    ),
+                    html.P('Termes les plus fréquents'),
+                    dcc.Graph(id='top_used_words',
+                              config=dict(displayModeBar=False),
+                              figure=top_used_words())
                 ],
             ),
             html.Div(
@@ -437,7 +399,10 @@ layout = [
                 className="pretty_container",
                 children=[
                     html.Div([html.P("Top Utilisateurs")], className="subtitle"),
-                    html.Div(id="top_open_opportunities", className="table"),
+                    dcc.Graph(id='top_users',
+                              config=dict(displayModeBar=False),
+                              figure=top_users())
+                    # html.Div(id="top_open_opportunities", className="table"),
                 ],
             ),
             html.Div(
@@ -445,34 +410,17 @@ layout = [
                 className="pretty_container",
                 children=[
                     html.Div([html.P("Répartition par pays")], className="subtitle"),
-                    html.Div(id="top_lost_opportunities", className="table"),
+                    dcc.Graph(id="worldmap",
+                              config=dict(displayModeBar=False),
+                              figure=worldmap()
+                              )
                 ],
             ),
-        ],
-    ),
-    modal(),
+
+        ], className="pretty_container"),
+    modal()
 ]
 
-
-# updates heatmap figure based on dropdowns values or df updates
-@app.callback(
-    Output("heatmap", "figure"),
-    [Input("heatmap_dropdown", "value"), Input("opportunities_df", "data")],
-)
-def heat_map_callback(stage, df):
-    df = pd.read_json(df, orient="split")
-    df = df[pd.notnull(df["Type"])]
-    x = []
-    y = df["Type"].unique()
-    if stage == "all_s":
-        x = df["Topic"].unique()
-    elif stage == "cold":
-        x = ["Needs Analysis", "Prospecting", "Qualification"]
-    elif stage == "warm":
-        x = ["Value Proposition", "Id. Decision Makers", "Perception Analysis"]
-    else:
-        x = ["Proposal/Price Quote", "Negotiation/Review", "Closed Won"]
-    return heat_map_fig(df, x, y)
 
 
 # updates converted opportunity count graph based on dropdowns values or df updates
@@ -485,7 +433,6 @@ def heat_map_callback(stage, df):
     ],
 )
 def converted_opportunity_callback(period, source, df):
-    df = pd.read_json(df, orient="split")
     return converted_opportunities(period, source, df)
 
 
@@ -495,8 +442,8 @@ def converted_opportunity_callback(period, source, df):
     [Input("opportunities_df", "data")],
 )
 def left_opportunities_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    won = millify(str(df[df["Status Reason"] == 1]["Est. Revenue"].sum()))
+    df = pd.read_csv('data/top_mentions.csv')
+    won = millify(str(df.shape[0]))
     return dcc.Markdown("**{}**".format(won))
 
 
@@ -506,8 +453,8 @@ def left_opportunities_indicator_callback(df):
     [Input("opportunities_df", "data")],
 )
 def middle_opportunities_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    active = millify(str(df[(df["IsClosed"] == 0)]["Est. Revenue"].sum()))
+    df = pd.read_csv('data/extracted_tweets.csv', sep=';')
+    active = millify(str(df.shape[0]))
     return dcc.Markdown("**{}**".format(active))
 
 
@@ -517,8 +464,8 @@ def middle_opportunities_indicator_callback(df):
     [Input("opportunities_df", "data")],
 )
 def right_opportunities_indicator_callback(df):
-    df = pd.read_json(df, orient="split")
-    lost = millify(str(df[(df["Status Reason"] == 0) & (df["IsClosed"] == 1)]["Est. Revenue"].sum()))
+    df = pd.read_csv('data/extracted_tweets.csv', sep=';')
+    lost = millify(str(len(df["screen_name"].unique())))
     return dcc.Markdown("**{}**".format(lost))
 
 
@@ -527,7 +474,7 @@ def right_opportunities_indicator_callback(df):
     Output("opportunities_modal", "style"), [Input("new_opportunity", "n_clicks")]
 )
 def display_opportunities_modal_callback(n):
-    if n > 0:
+    if n > 0 :
         return {"display": "block"}
     return {"display": "none"}
 
@@ -544,7 +491,7 @@ def close_modal_callback(n, n2):
     return 0
 
 
-# add new opportunity to salesforce and stores new df in hidden div
+# add new opportunity and stores new df in hidden div
 @app.callback(
     Output("opportunities_df", "data"),
     [Input("submit_new_opportunity", "n_clicks")],
@@ -552,34 +499,26 @@ def close_modal_callback(n, n2):
         State("new_opportunity_name", "value"),
         State("new_opportunity_stage", "value"),
         State("new_opportunity_amount", "value"),
-        State("new_opportunity_probability", "value"),
         State("new_opportunity_date", "date"),
-        State("new_opportunity_type", "value"),
-        State("new_opportunity_source", "value"),
-        State("opportunities_df", "data"),
     ],
 )
-def add_opportunity_callback(
-    n_clicks, name, stage, amount, probability, date, o_type, source, current_df
-):
+def add_opportunity_callback(n_clicks, name, lang, amount, date):
     if n_clicks > 0:
-        if name == "":
-            name = "Not named yet"
-        query = {
-            "Potential Customer": name,
-            "Topic": stage,
-            "Est. Revenue": amount,
-            "Probability": probability,
-            "CloseDate": date,
-            "Type": o_type,
-            "LeadSource": source,
+        print(date)
+        print(name)
+        print(amount)
+        params_extract = {
+            'keywords': [name],
+            'date_since': "2021-03-01",
+            'lang': "lang",
+            'count': int(amount)
         }
 
-        df = []
+        extraction.run(params_extract)
+        analysis.run()
 
-        return df.to_json(orient="split")
 
-    return current_df
+    return 0
 
 
 # updates top open opportunities based on df updates
@@ -587,14 +526,4 @@ def add_opportunity_callback(
     Output("top_open_opportunities", "children"), [Input("opportunities_df", "data")]
 )
 def top_open_opportunities_callback(df):
-    df = pd.read_json(df, orient="split")
     return top_open_opportunities(df)
-
-
-# updates top lost opportunities based on df updates
-@app.callback(
-    Output("top_lost_opportunities", "children"), [Input("opportunities_df", "data")]
-)
-def top_lost_opportunities_callback(df):
-    df = pd.read_json(df, orient="split")
-    return top_lost_opportunities(df)
